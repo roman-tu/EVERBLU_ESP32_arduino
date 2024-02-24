@@ -76,7 +76,7 @@ void reconnect()
     // Create a random client ID
 
     // Attempt to connect
-    if (clientMQTT.connect(MQTT_TOKEN))
+    if (clientMQTT.connect(MQTT_TOKEN, MQTT_TOKEN, NULL))
     {
       Serial.println("connected");
       // Subscribe to topic
