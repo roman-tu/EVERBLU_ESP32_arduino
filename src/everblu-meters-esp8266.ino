@@ -28,7 +28,7 @@ static bool eth_connected = false;
 // Your MQTT broker ID
 const char *mqttBroker = "178.91.129.235";
 const int mqttPort = 1883;
-const char *MQTT_TOKEN = "34d3ac20-d317-11ee-b407-2938272b09db";
+const char *MQTT_TOKEN = "GRSXe2UPEFNvuMXDAAxS";
 // MQTT topics
 const char *publishTopic = "v1/devices/me/attributes";
 const char *subscribeTopic = "v1/devices/me/telemetry";
