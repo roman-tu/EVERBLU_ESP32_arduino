@@ -26,7 +26,7 @@ static bool eth_connected = false;
 
 
 // Your MQTT broker ID
-const char *mqttBroker = "178.91.129.235";
+const char *mqttBroker = "iot.tocloud.kz";
 const int mqttPort = 1883;
 const char *MQTT_TOKEN = "GRSXe2UPEFNvuMXDAAxS";
 // MQTT topics
