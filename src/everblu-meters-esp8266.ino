@@ -1,342 +1,241 @@
-#include <ArduinoOTA.h>
+/*
+    This sketch shows the Ethernet event usage
 
-#include "everblu_meters.h"
+*/
 
-// Project source : 
-// http://www.lamaisonsimon.fr/wiki/doku.php?id=maison2:compteur_d_eau:compteur_d_eau
-
-// Require EspMQTTClient library (by Patrick Lapointe) version 1.13.3
-// Install from Arduino library manager (and its dependancies)
-// https://github.com/plapointe6/EspMQTTClient/releases/tag/1.13.3
-#include "EspMQTTClient.h"
-
-// Edit "everblu_meters.h" file then change the define at the end of the file
-
-#ifndef LED_BUILTIN
-// Change this pin if needed
-#define LED_BUILTIN 2
+// Important to be defined BEFORE including ETH.h for ETH.begin() to work.
+// Example RMII LAN8720 (Olimex, etc.)
+#ifndef ETH_PHY_TYPE
+#define ETH_PHY_TYPE        ETH_PHY_LAN8720
+#define ETH_PHY_ADDR         0
+#define ETH_PHY_MDC         23
+#define ETH_PHY_MDIO        18
+#define ETH_PHY_POWER       -1
+#define ETH_CLK_MODE        ETH_CLOCK_GPIO0_IN
 #endif
 
-#define LED_PIN 22
-#define LED_PIN_DONE 21
+#include <Arduino.h>
+#include <ETH.h>
+#include <ArduinoOTA.h>
+#include <WebServer.h>
+#include <PubSubClient.h>
 
-void blinkLed() {
-  pinMode(LED_PIN_DONE, OUTPUT);
-  digitalWrite(LED_PIN, HIGH);   // включить светодиод
-  delay(2000);                   // ждать секунду
-  digitalWrite(LED_PIN_DONE, LOW);    // выключить светодиод
-}
-
-void blinkLedWhileSearch() {
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, HIGH);   // включить светодиод
-  delay(30);                   // ждать секунду
-  digitalWrite(LED_PIN, LOW);    // выключить светодиод
-  delay(30);
-  digitalWrite(LED_PIN, HIGH);   // включить светодиод
-  delay(30);                   // ждать секунду
-  digitalWrite(LED_PIN, LOW);    // выключить светодиод
-  delay(50);
-}
+const char* ssid     = "romaska:з";
+const char* password = "VEHI2019";
+static bool eth_connected = false;
 
 
-EspMQTTClient mqtt(
-  "MyESSID",            // Your Wifi SSID
-  "MyWiFiKey",          // Your WiFi key
-  "mqtt.server.com",    // MQTT Broker server ip
-  "MQTTUsername",       // Can be omitted if not needed
-  "MQTTPassword",       // Can be omitted if not needed
-  "EverblueCyble",      // Client name that uniquely identify your device
-  1883                  // MQTT Broker server port
-);
+// Your MQTT broker ID
+const char *mqttBroker = "178.91.129.235";
+const int mqttPort = 1883;
+const char *MQTT_TOKEN = "34d3ac20-d317-11ee-b407-2938272b09db";
+// MQTT topics
+const char *publishTopic = "v1/devices/me/attributes";
+const char *subscribeTopic = "v1/devices/me/telemetry";
 
-const char *jsonTemplate = 
-"{                    \
-\"liters\": %d,       \
-\"counter\" : %d,     \
-\"battery\" : %d,     \
-\"timestamp\" : \"%s\"\
-}";
+WiFiClient espClient;
+PubSubClient clientMQTT(espClient);
 
-int _retry = 0;
-void onUpdateData()
+unsigned long lastMsg = 0;
+#define MSG_BUFFER_SIZE (5)
+char msg[MSG_BUFFER_SIZE];
+
+// Callback function whenever an MQTT message is received
+void callback(char *topic, byte *payload, unsigned int length)
 {
-  struct tmeter_data meter_data;
-  meter_data = get_meter_data();
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  String message;
+  for (int i = 0; i < length; i++)
+  {
+    Serial.print(message += (char)payload[i]);
+  }
+  Serial.println();
 
-  time_t tnow = time(nullptr);
-  struct tm *ptm = gmtime(&tnow);
-  Serial.printf("Current date (UTC) : %04d/%02d/%02d %02d:%02d:%02d - %s\n", ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday, ptm->tm_hour, ptm->tm_min, ptm->tm_sec, String(tnow, DEC).c_str());
+  // Switch on the LED if 'ON' was received
+  if (message == "ON")
+  {
+    Serial.println("Turning ON Built In LED..");
+    digitalWrite(2, HIGH);
+  }
+  else
+  {
+    Serial.println("Turning OFF Built In LED..");
+    digitalWrite(2, LOW);
+  }
+}
 
-  char iso8601[128];
-  strftime(iso8601, sizeof iso8601, "%FT%TZ", gmtime(&tnow));
+void reconnect()
+{
+  // Loop until we're reconnected
+  while (!clientMQTT.connected())
+  {
+    Serial.print("Attempting MQTT connection...");
 
-  if (meter_data.reads_counter == 0 || meter_data.liters == 0) {
-    Serial.println("Unable to retrieve data from meter. Retry later...");
+    // Create a random client ID
 
-    // Call back this function in 10 sec (in miliseconds)
-    if (_retry++ < 10)
-      mqtt.executeDelayed(1000 * 10, onUpdateData);
+    // Attempt to connect
+    if (clientMQTT.connect(MQTT_TOKEN))
+    {
+      Serial.println("connected");
+      // Subscribe to topic
+      clientMQTT.subscribe(subscribeTopic);
+    }
+    else
+    {
+      Serial.print("failed, rc=");
+      Serial.print(clientMQTT.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
 
+// WARNING: WiFiEvent is called from a separate FreeRTOS task (thread)!
+void WiFiEvent(WiFiEvent_t event)
+{
+  int numberOfTries = 20;
+  switch(WiFi.status()) {
+          case WL_NO_SSID_AVAIL:
+            Serial.println("[WiFi] SSID not found");
+            break;
+          case WL_CONNECT_FAILED:
+            Serial.print("[WiFi] Failed - WiFi not connected! Reason: ");
+            return;
+            break;
+          case WL_CONNECTION_LOST:
+            Serial.println("[WiFi] Connection was lost");
+            break;
+          case WL_SCAN_COMPLETED:
+            Serial.println("[WiFi] Scan is completed");
+            break;
+          case WL_DISCONNECTED:
+            Serial.println("[WiFi] WiFi is disconnected");
+            break;
+          case WL_CONNECTED:
+            Serial.println("[WiFi] WiFi is connected!");
+            Serial.print("[WiFi] IP address: ");
+            Serial.println(WiFi.localIP());
+            return;
+            break;
+          default:
+            Serial.print("[WiFi] WiFi Status: ");
+            Serial.println(WiFi.status());
+            break;
+        }
+        
+        if(numberOfTries <= 0){
+          Serial.print("[WiFi] Failed to connect to WiFi!");
+          // Use disconnect function to force stop trying to connect
+          WiFi.disconnect();
+          return;
+        } else {
+          numberOfTries--;
+        }
+}
+
+void ETHEvent(WiFiEvent_t event)
+{
+  int numberOfTries = 20;
+  switch (event) {
+    case ARDUINO_EVENT_ETH_START:
+      Serial.println("ETH Started");
+      // The hostname must be set after the interface is started, but needs
+      // to be set before DHCP, so set it from the event handler thread.
+      ETH.setHostname("esp32-ethernet");
+      WiFi.begin();
+      break;
+    case ARDUINO_EVENT_ETH_CONNECTED:
+      Serial.println("ETH Connected");
+      break;
+    case ARDUINO_EVENT_ETH_GOT_IP:
+      Serial.println("ETH Got IP");
+      Serial.println(ETH.localIP());
+      eth_connected = true;
+      break;
+    case ARDUINO_EVENT_ETH_LOST_IP:
+      Serial.println("ETH Lost IP");
+      eth_connected = false;
+      break;
+    case ARDUINO_EVENT_ETH_DISCONNECTED:
+      Serial.println("ETH Disconnected");
+      eth_connected = false;
+      break;
+    case ARDUINO_EVENT_ETH_STOP:
+      Serial.println("ETH Stopped");
+      eth_connected = false;
+      break;
+    default:
+      break;
+  }
+}
+
+void testClient(const char * host, uint16_t port)
+{
+  Serial.print("\nconnecting to ");
+  Serial.println(host);
+
+  WiFiClient client;
+  if (!client.connect(host, port)) {
+    Serial.println("connection failed");
     return;
   }
-
-  digitalWrite(LED_BUILTIN, LOW); // turned on
-
-  Serial.printf("Liters : %d\nBattery (in months) : %d\nCounter : %d\n\n", meter_data.liters, meter_data.battery_left, meter_data.reads_counter);
-
-  mqtt.publish("everblu/cyble/liters", String(meter_data.liters, DEC), true);
-  delay(50); // Do not remove
-  mqtt.publish("everblu/cyble/counter", String(meter_data.reads_counter, DEC), true);
-  delay(50); // Do not remove
-  mqtt.publish("everblu/cyble/battery", String(meter_data.battery_left, DEC), true);
-  delay(50); // Do not remove
-  mqtt.publish("everblu/cyble/timestamp", iso8601, true); // timestamp since epoch in UTC
-  delay(50); // Do not remove
-
-  char json[512];
-  sprintf(json, jsonTemplate, meter_data.liters, meter_data.reads_counter, meter_data.battery_left, iso8601);
-  mqtt.publish("everblu/cyble/json", json, true); // send all data as a json message
-}
-
-
-// This function calls onUpdateData() every days at 10:00am UTC
-void onScheduled()
-{
-  time_t tnow = time(nullptr);
-  struct tm *ptm = gmtime(&tnow);
-
-
-  // At 10:00:00am UTC
-  if (ptm->tm_hour == 10 && ptm->tm_min == 0 && ptm->tm_sec == 0) {
-
-    // Call back in 23 hours
-    mqtt.executeDelayed(1000 * 60 * 60 * 23, onScheduled);
-
-    Serial.println("It is time to update data from meter :)");
-
-    // Update data
-    _retry = 0;
-    onUpdateData();
-
-    return;
+  client.printf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", host);
+  while (client.connected() && !client.available());
+  while (client.available()) {
+    Serial.write(client.read());
   }
 
-  // Every 500 ms
-  mqtt.executeDelayed(500, onScheduled);
+  Serial.println("closing connection\n");
+  client.stop();
 }
 
-
-String jsonDiscoveryDevice1 =
-"{ \
-  \"name\": \"Compteur Eau Index\", \
-  \"unique_id\": \"water_meter_value\",\
-  \"object_id\": \"water_meter_value\",\
-  \"icon\": \"mdi:water\",\
-  \"state\": \"{{ states(sensor.water_meter_value)|float / 1 }}\",\
-  \"unit_of_measurement\": \"L\",\
-  \"device_class\": \"water\",\
-  \"state_class\": \"total_increasing\",\
-  \"qos\": \"0\",\
-  \"state_topic\": \"everblu/cyble/liters\",\
-  \"force_update\": \"true\",\
-  \"device\" : {\
-  \"identifiers\" : [\
-  \"14071984\" ],\
-  \"name\": \"Compteur Eau\",\
-  \"model\": \"Everblu Cyble ESP8266/ESP32\",\
-  \"manufacturer\": \"Psykokwak\",\
-  \"suggested_area\": \"Home\"}\
-}";
-
-String jsonDiscoveryDevice2 =
-"{ \
-  \"name\": \"Compteur Eau Batterie\", \
-  \"unique_id\": \"water_meter_battery\",\
-  \"object_id\": \"water_meter_battery\",\
-  \"device_class\": \"battery\",\
-  \"icon\": \"mdi:battery\",\
-  \"unit_of_measurement\": \"%\",\
-  \"qos\": \"0\",\
-  \"state_topic\": \"everblu/cyble/battery\",\
-  \"value_template\": \"{{ [(value|int), 100] | min }}\",\
-  \"force_update\": \"true\",\
-  \"device\" : {\
-  \"identifiers\" : [\
-  \"14071984\" ],\
-  \"name\": \"Compteur Eau\",\
-  \"model\": \"Everblu Cyble ESP8266/ESP32\",\
-  \"manufacturer\": \"Psykokwak\",\
-  \"suggested_area\": \"Home\"}\
-}";
-
-String jsonDiscoveryDevice3 =
-"{ \
-  \"name\": \"Compteur Eau Compteur\", \
-  \"unique_id\": \"water_meter_counter\",\
-  \"object_id\": \"water_meter_counter\",\
-  \"icon\": \"mdi:counter\",\
-  \"qos\": \"0\",\
-  \"state_topic\": \"everblu/cyble/counter\",\
-  \"force_update\": \"true\",\
-  \"device\" : {\
-  \"identifiers\" : [\
-  \"14071984\" ],\
-  \"name\": \"Compteur Eau\",\
-  \"model\": \"Everblu Cyble ESP8266/ESP32\",\
-  \"manufacturer\": \"Psykokwak\",\
-  \"suggested_area\": \"Home\"}\
-}";
-
-String jsonDiscoveryDevice4 =
-  "{ \
-  \"name\": \"Compteur Eau Timestamp\", \
-  \"unique_id\": \"water_meter_timestamp\",\
-  \"object_id\": \"water_meter_timestamp\",\
-  \"device_class\": \"timestamp\",\
-  \"icon\": \"mdi:clock\",\
-  \"qos\": \"0\",\
-  \"state_topic\": \"everblu/cyble/timestamp\",\
-  \"force_update\": \"true\",\
-  \"device\" : {\
-  \"identifiers\" : [\
-  \"14071984\" ],\
-  \"name\": \"Compteur Eau\",\
-  \"model\": \"Everblu Cyble ESP8266/ESP32\",\
-  \"manufacturer\": \"Psykokwak\",\
-  \"suggested_area\": \"Home\"}\
-}";
-
-void onConnectionEstablished()
-{
-  Serial.println("Connected to MQTT Broker :)");
-
-  Serial.println("> Configure time from NTP server.");
-  configTzTime("UTC0", "pool.ntp.org");
-
-
-
-
-  Serial.println("> Configure Arduino OTA flash.");
-  ArduinoOTA.onStart([]() {
-    String type;
-    if (ArduinoOTA.getCommand() == U_FLASH) {
-      type = "sketch";
-    }
-    else { // U_FS
-      type = "filesystem";
-    }
-    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-    Serial.println("Start updating " + type);
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd updating.");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("%u%%\r\n", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) {
-      Serial.println("Auth Failed");
-    }
-    else if (error == OTA_BEGIN_ERROR) {
-      Serial.println("Begin Failed");
-    }
-    else if (error == OTA_CONNECT_ERROR) {
-      Serial.println("Connect Failed");
-    }
-    else if (error == OTA_RECEIVE_ERROR) {
-      Serial.println("Receive Failed");
-    }
-    else if (error == OTA_END_ERROR) {
-      Serial.println("End Failed");
-    }
-  });
-  ArduinoOTA.setHostname("EVERBLUREADER");
-  ArduinoOTA.begin();
-
-  mqtt.subscribe("everblu/cyble/trigger", [](const String& message) {
-    if (message.length() > 0) {
-
-      Serial.println("Update data from meter from MQTT trigger");
-
-      _retry = 0;
-      onUpdateData();
-    }
-  });
-
-
-
-  Serial.println("> Send MQTT config for HA.");
-  // Auto discovery
-  delay(50); // Do not remove
-  mqtt.publish("homeassistant/sensor/water_meter_value/config", jsonDiscoveryDevice1, true);
-  delay(50); // Do not remove
-  mqtt.publish("homeassistant/sensor/water_meter_battery/config", jsonDiscoveryDevice2, true);
-  delay(50); // Do not remove
-  mqtt.publish("homeassistant/sensor/water_meter_counter/config", jsonDiscoveryDevice3, true);
-  delay(50); // Do not remove
-  mqtt.publish("homeassistant/sensor/water_meter_timestamp/config", jsonDiscoveryDevice4, true);
-  delay(50); // Do not remove
-
-  onScheduled();
+void setupMQTT(){
+   // setup the mqtt server and callback
+  clientMQTT.setServer(mqttBroker, mqttPort);
+  clientMQTT.setCallback(callback);
+  Serial.println("MQTT server sets");
 }
 
 void setup()
 {
   Serial.begin(115200);
-  Serial.println("\n");
-
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH); // turned off
-
-  mqtt.setMaxPacketSize(1024);
-  //mqtt.enableDebuggingMessages(true);
-
-  
-  // Use this piece of code to find the right frequency.
-  for (float i = 433.76f; i < FREQUENCY; i += 0.0005f) {
-    Serial.printf("----Test frequency : %f\n", i);
-    cc1101_init(EVBM21_473874);
-        
-    struct tmeter_data meter_data;
-    meter_data = get_meter_data();
-    Serial.printf("\n------------------------------\nGot frequency : %f\n------------------------------\n", i);
-    // blinkLed();
-    Serial.printf("Liters : %d\nBattery (in months) : %d\nCounter : %d\n\n", meter_data.liters, meter_data.battery_left, meter_data.reads_counter);
-
-
-    // if (meter_data.reads_counter != 0 || meter_data.liters != 0) {
-    //   Serial.printf("\n------------------------------\nGot frequency : %f\n------------------------------\n", i);
-    //   blinkLed();
-    //   Serial.printf("Liters : %d\nBattery (in months) : %d\nCounter : %d\n\n", meter_data.liters, meter_data.battery_left, meter_data.reads_counter);
-
-    //   digitalWrite(LED_BUILTIN, LOW); // turned on
-
-    //   while (42);
-    // }else{
-      // blinkLedWhileSearch();
-    //   Serial.printf("Skip ------------\n");
-    // }
+  pinMode(2, OUTPUT);
+  pinMode(5, INPUT_PULLUP); // Установите пин как вход с подтягивающим резистором
+  int pinState = digitalRead(5); // Читаем состояние пина
+  if (pinState == LOW) { // Если пин замкнут
+    Serial.println("WIFI AP STARTED");
+    WiFi.onEvent(WiFiEvent);  // Will call WiFiEvent() from another thread.
+    WiFi.begin(ssid, password);
+    setupMQTT();
+  } else { // Если пин разомкнут
+    Serial.println("ETH STARTED");
+    WiFi.onEvent(ETHEvent);  // Will call WiFiEvent() from another thread.
+    ETH.begin();
+    setupMQTT();
   }
-  
-
-
-
-  // cc1101_init(EVBM21_473874);
-
-  
-  // // Use this piece of code to test
-  // struct tmeter_data meter_data;
-  // meter_data = get_meter_data();
-  // Serial.printf("\nLiters : %d\nBattery (in months) : %d\nCounter : %d\nTime start : %d\nTime end : %d\n\n", meter_data.liters, meter_data.battery_left, meter_data.reads_counter, meter_data.time_start, meter_data.time_end);
-  // while (42);
-  
 }
 
 void loop()
 {
-  // mqtt.loop();
-  ArduinoOTA.handle();
+  if (!clientMQTT.connected())
+  {
+    reconnect();
+  }
+  clientMQTT.loop();
+  unsigned long now = millis();
+  if (now - lastMsg > 10000)
+  {
+    lastMsg = now;
+    // Read the Hall Effect sensor value
+    int hallEffectValue = hallRead();
+
+    snprintf(msg, MSG_BUFFER_SIZE, "%d", hallEffectValue);
+    Serial.print("Publish message: ");
+    Serial.println(msg);
+    clientMQTT.publish(publishTopic, msg);
+  }
+  delay(1000);
 }
