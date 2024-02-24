@@ -101,10 +101,11 @@ uint8_t debug_out = 0;
 
 // Change these define according to your ESP32 board
 #ifdef ESP32
-#define SPI_CSK  18
-#define SPI_MISO 19
-#define SPI_MOSI 23
-#define SPI_SS   32
+#define SPI_CSK 12
+#define SPI_MISO 4
+#define SPI_MOSI 32
+#define SPI_SS 0
+
 #define cc1101_CSn 32
 #endif
 
@@ -267,13 +268,13 @@ void show_cc1101_registers_settings(void);
 void cc1101_reset(void)			// reset defined in cc1100 datasheet §19.1
 {// CS should be high from gpio load spi command
   //  commented car ne fonctionne pas avec wiringPi a voir avec BCM2835 ..
-  digitalWrite(cc1101_CSn, 0);     		// CS low
-  pinMode (cc1101_CSn, OUTPUT);
+  digitalWrite(SPI_SS, 0);     		// CS low
+  pinMode (SPI_SS, OUTPUT);
   delayMicroseconds(30);
-  digitalWrite(cc1101_CSn, 1);      	// CS high
+  digitalWrite(SPI_SS, 1);      	// CS high
   delayMicroseconds(100);	 // min 40us
   //Pull CSn low and wait for SO to go low
-  digitalWrite(cc1101_CSn, 0);     		// CS low
+  digitalWrite(SPI_SS, 0);     		// CS low
   delayMicroseconds(30);
 
 
@@ -386,7 +387,7 @@ void  cc1101_init(float freq)
   if ((wiringPiSPISetup(0, 500000)) < 0)        // channel 0 100khz   min 500khz ds la doc ?
   {
     //fprintf (stderr, "Can't open the SPI bus: %s\n", strerror (errno)) ;
-    printf("Can't open the SPI bus");
+    Serial.println("Can't open the SPI bus");
     exit(EXIT_FAILURE);
   }
   cc1101_reset();
@@ -396,6 +397,7 @@ void  cc1101_init(float freq)
   //show_cc1101_registers_settings();
   //delay(1);
   cc1101_configureRF_0(freq);
+
 }
 
 int8_t cc1100_rssi_convert2dbm(uint8_t Rssi_dec)

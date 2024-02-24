@@ -55,7 +55,7 @@ typedef unsigned char T_BOOL;       //1 octets
 #define FREQUENCY 433.8683f
 #define EVBM21_473874 433.794189f
 
-#define GDO0 33 //header  11 
+#define GDO0 14 //header  11 
 
 #define METER_YEAR              21
 #define METER_SERIAL            473874

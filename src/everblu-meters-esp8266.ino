@@ -18,7 +18,15 @@
 #include <ETH.h>
 #include <ArduinoOTA.h>
 #include <WebServer.h>
+#include <ArduinoJson.h>
 #include <PubSubClient.h>
+#include "everblu_meters.h"
+
+// Создание объекта JSON
+DynamicJsonDocument doc(1024);
+
+// Сериализация JSON-документа во временный буфер
+char buffer[512];
 
 const char* ssid     = "romaska:з";
 const char* password = "VEHI2019";
@@ -31,7 +39,8 @@ const int mqttPort = 1883;
 const char *MQTT_TOKEN = "GRSXe2UPEFNvuMXDAAxS";
 // MQTT topics
 const char *publishTopic = "v1/devices/me/attributes";
-const char *subscribeTopic = "v1/devices/me/telemetry";
+const char *subscribeTopic = "v1/devices/me/attributes";
+const char *telemetryTopic = "v1/devices/me/telemetry";
 
 WiFiClient espClient;
 PubSubClient clientMQTT(espClient);
@@ -39,6 +48,25 @@ PubSubClient clientMQTT(espClient);
 unsigned long lastMsg = 0;
 #define MSG_BUFFER_SIZE (5)
 char msg[MSG_BUFFER_SIZE];
+
+void blinkLed() {
+  pinMode(15, OUTPUT);
+  digitalWrite(15, LOW);   // включить светодиод
+  delay(1000);                   // ждать секунду
+  digitalWrite(15, HIGH);    // выключить светодиод
+}
+
+// void blinkLedWhileSearch() {
+//   pinMode(LED_PIN, OUTPUT);
+//   digitalWrite(LED_PIN, HIGH);   // включить светодиод
+//   delay(30);                   // ждать секунду
+//   digitalWrite(LED_PIN, LOW);    // выключить светодиод
+//   delay(30);
+//   digitalWrite(LED_PIN, HIGH);   // включить светодиод
+//   delay(30);                   // ждать секунду
+//   digitalWrite(LED_PIN, LOW);    // выключить светодиод
+//   delay(50);
+// }
 
 // Callback function whenever an MQTT message is received
 void callback(char *topic, byte *payload, unsigned int length)
@@ -203,6 +231,7 @@ void setup()
 {
   Serial.begin(115200);
   pinMode(2, OUTPUT);
+  pinMode(15, OUTPUT);
   pinMode(5, INPUT_PULLUP); // Установите пин как вход с подтягивающим резистором
   int pinState = digitalRead(5); // Читаем состояние пина
   if (pinState == LOW) { // Если пин замкнут
@@ -216,6 +245,7 @@ void setup()
     ETH.begin();
     setupMQTT();
   }
+  // digitalWrite(15, HIGH);
 }
 
 void loop()
@@ -226,12 +256,35 @@ void loop()
   }
   clientMQTT.loop();
   unsigned long now = millis();
+  
+  // for (float i = 433.76f; i < FREQUENCY; i += 0.0005f) {
+  Serial.printf("----Test frequency\n");
+  cc1101_init(EVBM21_473874);
+      
+  struct tmeter_data meter_data;
+  meter_data = get_meter_data();
+  
+  if (meter_data.reads_counter != 0 || meter_data.liters != 0) {
+    Serial.printf("\n------------------------------\nGot frequency\n------------------------------\n");
+    
+    Serial.printf("Liters : %d\nBattery (in months) : %d\nCounter : %d\n\n", meter_data.liters, meter_data.battery_left, meter_data.reads_counter);
+    doc["Liters"] = meter_data.liters;
+    doc["Battery (in months)"] = meter_data.battery_left;
+    doc["Counter"] = meter_data.reads_counter;
+    blinkLed();
+    // digitalWrite(15, HIGH); // turned on
+    // while (42);
+  }else{
+    Serial.printf("Skip ------------\n");
+  }
+  // }
   if (now - lastMsg > 10000)
   {
     lastMsg = now;
+    serializeJson(doc, buffer);
     // Read the Hall Effect sensor value
     int hallEffectValue = hallRead();
-
+    clientMQTT.publish(telemetryTopic, buffer);
     snprintf(msg, MSG_BUFFER_SIZE, "%d", hallEffectValue);
     Serial.print("Publish message: ");
     Serial.println(msg);
