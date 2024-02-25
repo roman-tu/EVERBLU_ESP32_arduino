@@ -1,10 +1,22 @@
 /*
-    This sketch shows the Ethernet event usage
+Project: My Project
+Author: Your Name
+Date: February 24, 2024
 
+Description:
+This project is based on the github project of the user psykokwak-com (https://github.com/psykokwak-com/everblu-meters-esp8266.git ), 
+written to collect data from the EVERBLU radio module via the CC1101 radio module (sorry for the tautology). And then sending the collected data via MQTT.
+Flexible network settings allow you to set up data sending correctly.
+
+Functions:
+1. Reading data from sensors CC1101
+2. Connect to WIFI or ETHERNET network
+3. Send json with data on mqtt server
+
+Usage:
+To use this project, you will need an WT32-ETH01 or compatible board.
 */
 
-// Important to be defined BEFORE including ETH.h for ETH.begin() to work.
-// Example RMII LAN8720 (Olimex, etc.)
 #ifndef ETH_PHY_TYPE
 #define ETH_PHY_TYPE        ETH_PHY_LAN8720
 #define ETH_PHY_ADDR         0
@@ -22,14 +34,19 @@
 #include <PubSubClient.h>
 #include "everblu_meters.h"
 
-// Создание объекта JSON
-DynamicJsonDocument doc(1024);
+//yours param network
+#define STATIC_IP_ADDR "192.168.1.177"
+#define GATEWAY_ADDR "192.168.1.1"
+#define SUBNET_ADDR "255.255.255.0"
+#define DNS_ADDR "8.8.8.8"
 
-// Сериализация JSON-документа во временный буфер
+// buffer for json data
 char buffer[512];
 
+// wifi params
 const char* ssid     = "romaska:з";
 const char* password = "VEHI2019";
+//identification ethernet
 static bool eth_connected = false;
 
 
@@ -41,6 +58,9 @@ const char *MQTT_TOKEN = "GRSXe2UPEFNvuMXDAAxS";
 const char *publishTopic = "v1/devices/me/attributes";
 const char *subscribeTopic = "v1/devices/me/attributes";
 const char *telemetryTopic = "v1/devices/me/telemetry";
+
+// Создание объекта JSON
+DynamicJsonDocument doc(1024);
 
 WiFiClient espClient;
 PubSubClient clientMQTT(espClient);
@@ -54,6 +74,37 @@ void blinkLed() {
   digitalWrite(15, LOW);   // включить светодиод
   delay(1000);                   // ждать секунду
   digitalWrite(15, HIGH);    // выключить светодиод
+}
+
+struct NetworkParams {
+  int parts[4];
+};
+
+NetworkParams parseIP(const String& ip) {
+  NetworkParams result;
+  int start = 0;
+  for (int i = 0; i < 4; i++) {
+    int end = ip.indexOf('.', start);
+    if (end == -1) {
+      end = ip.length();
+    }
+    result.parts[i] = ip.substring(start, end).toInt();
+    start = end + 1;
+  }
+  return result;
+}
+//split string "."
+NetworkParams Staticip = parseIP(STATIC_IP_ADDR);
+NetworkParams Gateway = parseIP(GATEWAY_ADDR);
+NetworkParams Subnet = parseIP(SUBNET_ADDR);
+NetworkParams Dns = parseIP(DNS_ADDR);
+
+void setStaticParamNetwork(){
+  // set yours net param
+  IPAddress staticIP(Staticip.parts[0], Staticip.parts[1], Staticip.parts[2], Staticip.parts[3]); // Статический IP-адрес
+  IPAddress gateway(Gateway.parts[0], Gateway.parts[1], Gateway.parts[2], Gateway.parts[3]);    // Шлюз
+  IPAddress subnet(Subnet.parts[0], Subnet.parts[1], Subnet.parts[2], Subnet.parts[3]);   // Маска подсети
+  IPAddress dns(Dns.parts[0], Dns.parts[1], Dns.parts[2], Dns.parts[3]);            // DNS-сервер
 }
 
 // void blinkLedWhileSearch() {
@@ -233,6 +284,7 @@ void setup()
   pinMode(2, OUTPUT);
   pinMode(15, OUTPUT);
   pinMode(5, INPUT_PULLUP); // Установите пин как вход с подтягивающим резистором
+  setStaticParamNetwork();
   int pinState = digitalRead(5); // Читаем состояние пина
   if (pinState == LOW) { // Если пин замкнут
     Serial.println("WIFI AP STARTED");

@@ -91,13 +91,6 @@ uint8_t debug_out = 0;
 #define TEST1 				0x2D                                    // Various test settings
 #define TEST0 				0x2E                                    // Various test settings
 
-// Change these define according to your ESP8266 board
-#ifdef ESP8266
-#define SPI_CSK  PIN_SPI_SCK
-#define SPI_MISO PIN_SPI_MISO
-#define SPI_MOSI PIN_SPI_MOSI
-#define SPI_SS   PIN_SPI_SS
-#endif
 
 // Change these define according to your ESP32 board
 #ifdef ESP32
@@ -133,11 +126,6 @@ int wiringPiSPISetup(int channel, int speed)
 
   pinMode(SPI_SS, OUTPUT);
   digitalWrite(SPI_SS, 1);
-
-#ifdef ESP8266
-  SPI.pins(SPI_CSK, SPI_MISO, SPI_MOSI, SPI_SS);
-  SPI.begin();
-#endif
 
 #ifdef ESP32
   SPI.begin(SPI_CSK, SPI_MISO, SPI_MOSI);
