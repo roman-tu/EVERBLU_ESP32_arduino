@@ -57,8 +57,5 @@ typedef unsigned char T_BOOL;       //1 octets
 
 #define GDO0 14 //header  11 
 
-#define METER_YEAR              21
-#define METER_SERIAL            473874
-
-
-
+// int METER_YEAR = 21;
+// int METER_SERIAL = 473874;

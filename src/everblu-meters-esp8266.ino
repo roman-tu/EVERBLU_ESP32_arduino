@@ -46,7 +46,7 @@ To use this project, you will need an WT32-ETH01 or compatible board.
 #endif
 
 // buffer for json data
-char buffer[512];
+char buffer[1080];
 
 // wifi params
 const char* ssid     = "romaska:з";
@@ -264,6 +264,8 @@ void setupMQTT(){
   Serial.println("MQTT server sets");
 }
 
+
+
 void setup()
 {
   Serial.begin(115200);
@@ -284,7 +286,6 @@ void setup()
     Serial.println("WIFI AP STARTED");
     WiFi.onEvent(WiFiEvent);  // Will call WiFiEvent() from another thread.
     WiFi.begin(ssid, password);
-    
     setupMQTT();
   } else { // Если пин разомкнут
     Serial.println("ETH STARTED");
@@ -311,45 +312,75 @@ void setup()
 
 void loop()
 {
-  // Создание объекта JSON
   DynamicJsonDocument doc(1024);
+  DynamicJsonDocument cc1101_1(1024);
+  cc1101_1["id"] = 1;
+  cc1101_1["frequency"] = EVBM21_473874;
+  cc1101_1["year"] = 20;
+  cc1101_1["serialNumber"] = 123;
+
+  DynamicJsonDocument cc1101_2(1024);
+  cc1101_2["id"] = 2;
+  cc1101_2["frequency"] = EVBM21_473874;
+  cc1101_2["year"] = 21;
+  cc1101_2["serialNumber"] = 473874;
+
   if (!clientMQTT.connected())
   {
     reconnect();
   }
   clientMQTT.loop();
+
+  printData(cc1101_2.as<JsonObject>(), doc.as<JsonObject>());
+  printData(cc1101_1.as<JsonObject>(), doc.as<JsonObject>());
+
+  int hallEffectValue = hallRead();
+  snprintf(msg, MSG_BUFFER_SIZE, "%d", hallEffectValue);
+  clientMQTT.publish(publishTopic, msg);
+  delay(100);
+}
+
+void printData(const JsonObject& data, const JsonObject& buff) {
+  DynamicJsonDocument doc(1024);
+  Serial.printf("----Testing frequency\n");
+  Serial.println((int)data["id"]);
+  Serial.print("Год: ");
+  Serial.println((int)data["year"]);
+  Serial.print("Серийный номер: ");
+  Serial.println((int)data["serialNumber"]);
+  Serial.print("Частота: ");
+  Serial.println((float)data["frequency"]);
+
+  cc1101_init((float)data["frequency"]);
   unsigned long now = millis();
-  
-  // for (float i = 433.76f; i < FREQUENCY; i += 0.0005f) {
-  Serial.printf("----Test frequency\n");
-  cc1101_init(EVBM21_473874);
-      
+
+  String Liters = "Liters" + String((int)data["id"]);
+
+  String Battery = "Battery (in months)" + String((int)data["id"]);
+
+  String Counter = "Counter" + String((int)data["id"]);
+
   struct tmeter_data meter_data;
-  meter_data = get_meter_data();
+
+  meter_data = get_meter_data((int)data["year"], (int)data["serialNumber"]);
   
   if (meter_data.reads_counter != 0 || meter_data.liters != 0) {
-    Serial.printf("\n------------------------------\nGot frequency\n------------------------------\n");
-    
+    Serial.printf("\n------------------------------\nGot data\n------------------------------\n");
     Serial.printf("Liters : %d\nBattery (in months) : %d\nCounter : %d\n\n", meter_data.liters, meter_data.battery_left, meter_data.reads_counter);
-    doc["Liters"] = meter_data.liters;
-    doc["Battery (in months)"] = meter_data.battery_left;
-    doc["Counter"] = meter_data.reads_counter;
+    doc[Liters] = meter_data.liters;
+    doc[Battery] = meter_data.battery_left;
+    doc[Counter] = meter_data.reads_counter;
     blinkLed();
   }else{
     Serial.printf("Skip ------------\n");
+    // doc[Liters] = 5345;
+    // doc[Battery] = 34634563;
+    // doc[Counter] = 777;
   }
-  // }
-  if (now - lastMsg > 10000)
-  {
-    lastMsg = now;
-    serializeJson(doc, buffer);
-    // Read the Hall Effect sensor value
-    int hallEffectValue = hallRead();
-    clientMQTT.publish(telemetryTopic, buffer);
-    snprintf(msg, MSG_BUFFER_SIZE, "%d", hallEffectValue);
-    Serial.print("Publish message: ");
-    Serial.println(msg);
-    clientMQTT.publish(publishTopic, msg);
-  }
+  serializeJson(doc, buffer);
+  // Read the Hall Effect sensor value
+  Serial.print("Telemetry message: ");
+  clientMQTT.publish(telemetryTopic, buffer);
+  Serial.println(buffer);
   delay(1000);
 }

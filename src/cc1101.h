@@ -11,7 +11,6 @@ struct tmeter_data {
 
 void setMHZ(float mhz);
 void  cc1101_init(float freq);
-struct tmeter_data get_meter_data(void);
+struct tmeter_data get_meter_data(int my, int ms);
 
 #endif // __CC1101_H__
-#define ESP32 0

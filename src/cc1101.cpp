@@ -93,14 +93,12 @@ uint8_t debug_out = 0;
 
 
 // Change these define according to your ESP32 board
-#ifdef ESP32
 #define SPI_CSK 12
 #define SPI_MISO 4
 #define SPI_MOSI 32
 #define SPI_SS 0
 
 #define cc1101_CSn 32
-#endif
 
 int _spi_speed = 0;
 int wiringPiSPIDataRW(int channel, unsigned char *data, int len)
@@ -722,7 +720,7 @@ int receive_radian_frame(int size_byte, int rx_tmo_ms, uint8_t*rxBuffer, int rxB
 
 l'outils de reléve doit normalement acquité
 */
-struct tmeter_data get_meter_data(void)
+struct tmeter_data get_meter_data(int my, int ms)
 {
   struct tmeter_data sdata;
   uint8_t marcstate = 0xFF;
@@ -737,7 +735,7 @@ struct tmeter_data get_meter_data(void)
   memset(&sdata, 0, sizeof(sdata));
 
   uint8_t txbuffer[100];
-  Make_Radian_Master_req(txbuffer, METER_YEAR, METER_SERIAL);
+  Make_Radian_Master_req(txbuffer, my, ms);
 
   halRfWriteReg(MDMCFG2, 0x00);  //clear MDMCFG2 to do not send preamble and sync
   halRfWriteReg(PKTCTRL0, 0x02); //infinite packet len
