@@ -2,11 +2,11 @@
 # everblu-meters - Water usage data for Home Assistant
 Fetch water/gas usage data from Cyble EverBlu meters using RADIAN protocol on 433Mhz. Intergrated with Home Assistant via MQTT. 
 ## Hardware
-![ESP32 with CC1101](wt32-eth01_pinsconf.png)
+![WT32-ETH01](wt32-eth01_pinsconf.png)![CC1101](cc1101.png)
 The project runs on ESP32 with an RF transreciver (CC1101). 
 
 ### Connections ESP32 to CC1101:
-
+- See `everblu-meters-esp8266.ino` for LED and Switch(WIFI|ETHERNET) pins mapping.
 - See `cc1101.ccp` for SPI pins mapping.
 - See `everblu_meters.h` for GDOx pins mapping.
 
@@ -19,16 +19,16 @@ Pins wiring for [wt21-eth01 board link](https://files.seeedstudio.com/products/1
 |GOD0 (GDO0) |`GPIO 14`|
 |CSN (SPI chip select) |`GPIO 0`|
 |SCK (SPI clock)|`GPIO 12`|
-|MOSI (SPI MOSI) |`GPIO 32|`
+|MOSI (SPI MOSI) |`GPIO 32`|
 |GOD1 (SPI MISO)|`GPIO 4`|
 |GOD2 (GDO2) |not inst|
 |GND (ground)|`GND`|
 
-##LED and Switch pins
-|||
+## LED and Switch pins
+|--|--|
 |little switch |`GPIO 5`|
 |LED1 |`GPIO 15`|
 |LED2 |`GPIO 2`|
 
 ### Where YearMeter and SerialNumber ?
-[Where Year and SN](meter_label.png)
+![Where Year and SN](meter_label.png)

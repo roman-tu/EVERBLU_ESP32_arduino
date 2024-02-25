@@ -45,7 +45,7 @@
 #define sleep(x) Sleep(1000 * x)
 #endif
 
-#include "cc1101.h"
+// #include "cc1101.h"
 
 typedef unsigned char T_BOOL;       //1 octets
 

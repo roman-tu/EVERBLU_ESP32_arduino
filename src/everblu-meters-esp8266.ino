@@ -33,12 +33,17 @@ To use this project, you will need an WT32-ETH01 or compatible board.
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include "everblu_meters.h"
+#include <cc1101.h>
 
-//yours param network
-#define STATIC_IP_ADDR "192.168.1.177"
-#define GATEWAY_ADDR "192.168.1.1"
-#define SUBNET_ADDR "255.255.255.0"
-#define DNS_ADDR "8.8.8.8"
+#define STATIC_NET_ON
+
+  //yours static param network
+#ifdef STATIC_NET_ON
+  #define STATIC_IP_ADDR  "192.168.1.110"
+  #define GATEWAY_ADDR  "192.168.1.1"
+  #define SUBNET_ADDR  "255.255.255.0"
+  #define DNS_ADDR  "8.8.8.8"
+#endif
 
 // buffer for json data
 char buffer[512];
@@ -69,15 +74,12 @@ unsigned long lastMsg = 0;
 #define MSG_BUFFER_SIZE (5)
 char msg[MSG_BUFFER_SIZE];
 
-void blinkLed() {
-  pinMode(15, OUTPUT);
-  digitalWrite(15, LOW);   // включить светодиод
-  delay(1000);                   // ждать секунду
-  digitalWrite(15, HIGH);    // выключить светодиод
-}
+#define SwitchP 5
+#define LED1 15
+#define LED2 2
 
 struct NetworkParams {
-  int parts[4];
+  uint8_t parts[4];
 };
 
 NetworkParams parseIP(const String& ip) {
@@ -88,7 +90,7 @@ NetworkParams parseIP(const String& ip) {
     if (end == -1) {
       end = ip.length();
     }
-    result.parts[i] = ip.substring(start, end).toInt();
+    result.parts[i] = static_cast<uint8_t>(ip.substring(start, end).toInt());
     start = end + 1;
   }
   return result;
@@ -99,12 +101,34 @@ NetworkParams Gateway = parseIP(GATEWAY_ADDR);
 NetworkParams Subnet = parseIP(SUBNET_ADDR);
 NetworkParams Dns = parseIP(DNS_ADDR);
 
+// IPAddress staticIP(Staticip.parts[0], Staticip.parts[1], Staticip.parts[2], Staticip.parts[3]); // Статический IP-адрес
+// IPAddress gateway(Gateway.parts[0], Gateway.parts[1], Gateway.parts[2], Gateway.parts[3]);    // Шлюз
+// IPAddress subnet(Subnet.parts[0], Subnet.parts[1], Subnet.parts[2], Subnet.parts[3]);   // Маска подсети
+// IPAddress dns(Dns.parts[0], Dns.parts[1], Dns.parts[2], Dns.parts[3]);            // DNS-сервер
+
+IPAddress staticiP(192, 168, 1, 110); // Статический IP-адрес
+IPAddress gateway(192, 168, 1, 1);    // Шлюз
+IPAddress subnet(255, 255, 255, 0);   // Маска подсети
+IPAddress dns(8, 8, 8, 8);            // DNS-сервер
+
+
+
 void setStaticParamNetwork(){
-  // set yours net param
-  IPAddress staticIP(Staticip.parts[0], Staticip.parts[1], Staticip.parts[2], Staticip.parts[3]); // Статический IP-адрес
-  IPAddress gateway(Gateway.parts[0], Gateway.parts[1], Gateway.parts[2], Gateway.parts[3]);    // Шлюз
-  IPAddress subnet(Subnet.parts[0], Subnet.parts[1], Subnet.parts[2], Subnet.parts[3]);   // Маска подсети
-  IPAddress dns(Dns.parts[0], Dns.parts[1], Dns.parts[2], Dns.parts[3]);            // DNS-сервер
+  bool success = ETH.config(staticiP, gateway, subnet, dns, dns);
+  // Serial.println(Staticip.parts[0]);
+  if (success) {
+    // Конфигурация прошла успешно
+    Serial.println("Change static param Success");
+  } else {
+    // Конфигурация не удалась
+    Serial.println("Change static param ERROR");
+  }
+}
+
+void blinkLed() {
+  digitalWrite(LED1, LOW);   
+  delay(1000);                 
+  digitalWrite(LED1, HIGH);   
 }
 
 // void blinkLedWhileSearch() {
@@ -230,8 +254,14 @@ void ETHEvent(WiFiEvent_t event)
       Serial.println("ETH Connected");
       break;
     case ARDUINO_EVENT_ETH_GOT_IP:
-      Serial.println("ETH Got IP");
+      Serial.print("ETH Got IP ");
       Serial.println(ETH.localIP());
+      Serial.print("ETH Subnet Mask ");
+      Serial.println(ETH.subnetMask());
+      Serial.print("ETH Gateway IP ");
+      Serial.println(ETH.gatewayIP());
+      Serial.print("ETH Dns IP ");
+      Serial.println(ETH.dnsIP());
       eth_connected = true;
       break;
     case ARDUINO_EVENT_ETH_LOST_IP:
@@ -251,26 +281,6 @@ void ETHEvent(WiFiEvent_t event)
   }
 }
 
-void testClient(const char * host, uint16_t port)
-{
-  Serial.print("\nconnecting to ");
-  Serial.println(host);
-
-  WiFiClient client;
-  if (!client.connect(host, port)) {
-    Serial.println("connection failed");
-    return;
-  }
-  client.printf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", host);
-  while (client.connected() && !client.available());
-  while (client.available()) {
-    Serial.write(client.read());
-  }
-
-  Serial.println("closing connection\n");
-  client.stop();
-}
-
 void setupMQTT(){
    // setup the mqtt server and callback
   clientMQTT.setServer(mqttBroker, mqttPort);
@@ -281,10 +291,12 @@ void setupMQTT(){
 void setup()
 {
   Serial.begin(115200);
-  pinMode(2, OUTPUT);
-  pinMode(15, OUTPUT);
-  pinMode(5, INPUT_PULLUP); // Установите пин как вход с подтягивающим резистором
-  setStaticParamNetwork();
+  pinMode(LED1, OUTPUT);
+  pinMode(LED2, OUTPUT);
+  pinMode(SwitchP, INPUT_PULLUP); // Установите пин как вход с подтягивающим резистором
+  #ifdef STATIC_NET_ON
+    setStaticParamNetwork();
+  #endif
   int pinState = digitalRead(5); // Читаем состояние пина
   if (pinState == LOW) { // Если пин замкнут
     Serial.println("WIFI AP STARTED");
@@ -324,8 +336,6 @@ void loop()
     doc["Battery (in months)"] = meter_data.battery_left;
     doc["Counter"] = meter_data.reads_counter;
     blinkLed();
-    // digitalWrite(15, HIGH); // turned on
-    // while (42);
   }else{
     Serial.printf("Skip ------------\n");
   }
