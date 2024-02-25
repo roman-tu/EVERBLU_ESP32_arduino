@@ -39,10 +39,10 @@ To use this project, you will need an WT32-ETH01 or compatible board.
 
   //yours static param network
 #ifdef STATIC_NET_ON
-  #define STATIC_IP_ADDR  "192.168.1.110"
+  #define STATIC_IP_ADDR  "192.168.1.111"
   #define GATEWAY_ADDR  "192.168.1.1"
   #define SUBNET_ADDR  "255.255.255.0"
-  #define DNS_ADDR  "8.8.8.8"
+  #define DNS_ADDR  "0.0.0.0"
 #endif
 
 // buffer for json data
@@ -64,8 +64,7 @@ const char *publishTopic = "v1/devices/me/attributes";
 const char *subscribeTopic = "v1/devices/me/attributes";
 const char *telemetryTopic = "v1/devices/me/telemetry";
 
-// Создание объекта JSON
-DynamicJsonDocument doc(1024);
+
 
 WiFiClient espClient;
 PubSubClient clientMQTT(espClient);
@@ -94,35 +93,6 @@ NetworkParams parseIP(const String& ip) {
     start = end + 1;
   }
   return result;
-}
-//split string "."
-NetworkParams Staticip = parseIP(STATIC_IP_ADDR);
-NetworkParams Gateway = parseIP(GATEWAY_ADDR);
-NetworkParams Subnet = parseIP(SUBNET_ADDR);
-NetworkParams Dns = parseIP(DNS_ADDR);
-
-// IPAddress staticIP(Staticip.parts[0], Staticip.parts[1], Staticip.parts[2], Staticip.parts[3]); // Статический IP-адрес
-// IPAddress gateway(Gateway.parts[0], Gateway.parts[1], Gateway.parts[2], Gateway.parts[3]);    // Шлюз
-// IPAddress subnet(Subnet.parts[0], Subnet.parts[1], Subnet.parts[2], Subnet.parts[3]);   // Маска подсети
-// IPAddress dns(Dns.parts[0], Dns.parts[1], Dns.parts[2], Dns.parts[3]);            // DNS-сервер
-
-IPAddress staticiP(192, 168, 1, 110); // Статический IP-адрес
-IPAddress gateway(192, 168, 1, 1);    // Шлюз
-IPAddress subnet(255, 255, 255, 0);   // Маска подсети
-IPAddress dns(8, 8, 8, 8);            // DNS-сервер
-
-
-
-void setStaticParamNetwork(){
-  bool success = ETH.config(staticiP, gateway, subnet, dns, dns);
-  // Serial.println(Staticip.parts[0]);
-  if (success) {
-    // Конфигурация прошла успешно
-    Serial.println("Change static param Success");
-  } else {
-    // Конфигурация не удалась
-    Serial.println("Change static param ERROR");
-  }
 }
 
 void blinkLed() {
@@ -160,12 +130,12 @@ void callback(char *topic, byte *payload, unsigned int length)
   if (message == "ON")
   {
     Serial.println("Turning ON Built In LED..");
-    digitalWrite(2, HIGH);
+    digitalWrite(LED2, HIGH);
   }
   else
   {
     Serial.println("Turning OFF Built In LED..");
-    digitalWrite(2, LOW);
+    digitalWrite(LED2, LOW);
   }
 }
 
@@ -219,8 +189,14 @@ void WiFiEvent(WiFiEvent_t event)
             break;
           case WL_CONNECTED:
             Serial.println("[WiFi] WiFi is connected!");
-            Serial.print("[WiFi] IP address: ");
-            Serial.println(WiFi.localIP());
+            Serial.print("[WiFi] Got IP ");
+            Serial.println(ETH.localIP());
+            Serial.print("[WiFi] Subnet Mask ");
+            Serial.println(WiFi.subnetMask());
+            Serial.print("[WiFi] Gateway IP ");
+            Serial.println(WiFi.gatewayIP());
+            Serial.print("[WiFi] Dns IP ");
+            Serial.println(WiFi.dnsIP());
             return;
             break;
           default:
@@ -294,19 +270,40 @@ void setup()
   pinMode(LED1, OUTPUT);
   pinMode(LED2, OUTPUT);
   pinMode(SwitchP, INPUT_PULLUP); // Установите пин как вход с подтягивающим резистором
-  #ifdef STATIC_NET_ON
-    setStaticParamNetwork();
-  #endif
+
+  //split string "."
+  NetworkParams Staticip = parseIP(STATIC_IP_ADDR);
+  NetworkParams Gateway = parseIP(GATEWAY_ADDR);
+  NetworkParams Subnet = parseIP(SUBNET_ADDR);
+  NetworkParams Dns = parseIP(DNS_ADDR);
+
+  // // Serial.println(Staticip.parts[0]);
+  
   int pinState = digitalRead(5); // Читаем состояние пина
   if (pinState == LOW) { // Если пин замкнут
     Serial.println("WIFI AP STARTED");
     WiFi.onEvent(WiFiEvent);  // Will call WiFiEvent() from another thread.
     WiFi.begin(ssid, password);
+    
     setupMQTT();
   } else { // Если пин разомкнут
     Serial.println("ETH STARTED");
     WiFi.onEvent(ETHEvent);  // Will call WiFiEvent() from another thread.
     ETH.begin();
+
+    IPAddress staticiP(Staticip.parts[0], Staticip.parts[1], Staticip.parts[2], Staticip.parts[3]); // Статический IP-адрес
+    IPAddress gateway(Gateway.parts[0], Gateway.parts[1], Gateway.parts[2], Gateway.parts[3]);    // Шлюз
+    IPAddress subnet(Subnet.parts[0], Subnet.parts[1], Subnet.parts[2], Subnet.parts[3]);   // Маска подсети
+    IPAddress dns(Dns.parts[0], Dns.parts[1], Dns.parts[2], Dns.parts[3]);            // DNS-сервер
+
+    bool success = ETH.config(staticiP, gateway, subnet, dns);
+    if (success) {
+      // Конфигурация прошла успешно
+      Serial.println("Change static param Success");
+    } else {
+      // Конфигурация не удалась
+      Serial.println("Change static param ERROR");
+    }
     setupMQTT();
   }
   // digitalWrite(15, HIGH);
@@ -314,6 +311,8 @@ void setup()
 
 void loop()
 {
+  // Создание объекта JSON
+  DynamicJsonDocument doc(1024);
   if (!clientMQTT.connected())
   {
     reconnect();
