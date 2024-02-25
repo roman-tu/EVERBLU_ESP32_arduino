@@ -2,7 +2,7 @@
 # everblu-meters - Water usage data for Home Assistant
 Fetch water/gas usage data from Cyble EverBlu meters using RADIAN protocol on 433Mhz. Intergrated with Home Assistant via MQTT. 
 ## Hardware
-![ESP32 with CC1101](wt32-eth01_pinsconf.jpg)
+![ESP32 with CC1101](wt32-eth01_pinsconf.png)
 The project runs on ESP32 with an RF transreciver (CC1101). 
 
 ### Connections ESP32 to CC1101:
